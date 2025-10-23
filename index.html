@@ -118,23 +118,48 @@
             transform: translateY(0);
         }
 
-        .download-btn {
-            background: #10b981;
-            color: white;
-            margin-top: 10px;
-            text-decoration: none;
-            display: block;
-            text-align: center;
+        .json-output {
+            margin-top: 20px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 15px;
         }
 
-        .download-btn:hover {
+        .json-header {
+            margin-bottom: 10px;
+        }
+
+        .json-text {
+            width: 100%;
+            min-height: 200px;
+            max-height: 400px;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            background: white;
+            resize: vertical;
+            margin-bottom: 10px;
+        }
+
+        .copy-btn {
+            background: #10b981;
+            color: white;
+        }
+
+        .copy-btn:hover {
             background: #059669;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(16, 185, 129, 0.4);
         }
 
-        .download-btn:active {
+        .copy-btn:active {
             transform: translateY(0);
+        }
+
+        .copy-btn.copied {
+            background: #6366f1;
         }
 
         .hidden {
@@ -194,7 +219,14 @@
         
         <button class="button start-btn" id="startBtn">Start Tracking</button>
         <button class="button stop-btn hidden" id="stopBtn">Stop Tracking</button>
-        <a class="button download-btn hidden" id="downloadBtn">Download GPS Log</a>
+        
+        <div id="jsonOutput" class="json-output hidden">
+            <div class="json-header">
+                <span class="label">GPS Log (tap to copy)</span>
+            </div>
+            <textarea id="jsonText" class="json-text" readonly></textarea>
+            <button class="button copy-btn" id="copyBtn">Copy to Clipboard</button>
+        </div>
     </div>
 
     <script>
@@ -207,7 +239,9 @@
 
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
-        const downloadBtn = document.getElementById('downloadBtn');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const jsonText = document.getElementById('jsonText');
+        const copyBtn = document.getElementById('copyBtn');
         const timer = document.getElementById('timer');
         const startTimeDisplay = document.getElementById('startTime');
         const latitudeDisplay = document.getElementById('latitude');
@@ -277,23 +311,46 @@
             );
         }
 
-        function updateDownloadLink() {
-            // Pre-create the download link with data URI
+        function displayJSON() {
             const logsToExport = savedGpsLogs || gpsLogs;
             const dataStr = JSON.stringify(logsToExport, null, 2);
-            const fileName = `gps-log-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-            
-            // Create data URI
-            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-            
-            // Update the download button to be an actual link
-            downloadBtn.href = dataUri;
-            downloadBtn.download = fileName;
+            jsonText.value = dataStr;
+            jsonOutput.classList.remove('hidden');
         }
         
-        function exportJSON() {
-            showStatus('GPS log ready!', 'success');
-            setTimeout(hideStatus, 2000);
+        function copyToClipboard() {
+            jsonText.select();
+            jsonText.setSelectionRange(0, 99999); // For mobile devices
+            
+            navigator.clipboard.writeText(jsonText.value)
+                .then(() => {
+                    copyBtn.textContent = 'Copied! ✓';
+                    copyBtn.classList.add('copied');
+                    showStatus('JSON copied to clipboard!', 'success');
+                    
+                    setTimeout(() => {
+                        copyBtn.textContent = 'Copy to Clipboard';
+                        copyBtn.classList.remove('copied');
+                        hideStatus();
+                    }, 2000);
+                })
+                .catch((err) => {
+                    // Fallback for older browsers
+                    try {
+                        document.execCommand('copy');
+                        copyBtn.textContent = 'Copied! ✓';
+                        copyBtn.classList.add('copied');
+                        showStatus('JSON copied to clipboard!', 'success');
+                        
+                        setTimeout(() => {
+                            copyBtn.textContent = 'Copy to Clipboard';
+                            copyBtn.classList.remove('copied');
+                            hideStatus();
+                        }, 2000);
+                    } catch (e) {
+                        showStatus('Please manually copy the text', 'error');
+                    }
+                });
         }
 
         function startTracking() {
@@ -302,6 +359,9 @@
                 return;
             }
 
+            // Hide JSON output from previous session
+            jsonOutput.classList.add('hidden');
+            
             showStatus('Getting GPS position...', 'info');
 
             navigator.geolocation.getCurrentPosition(
@@ -377,12 +437,11 @@
             
             isTracking = false;
             
-            // Save GPS logs for manual download
+            // Save GPS logs and display JSON
             if (Object.keys(gpsLogs).length > 0) {
                 savedGpsLogs = { ...gpsLogs };
-                updateDownloadLink(); // Prepare the download link
-                showStatus(`Tracking stopped. ${Object.keys(gpsLogs).length} GPS logs ready to download`, 'success');
-                downloadBtn.classList.remove('hidden');
+                displayJSON();
+                showStatus(`Tracking stopped. ${Object.keys(gpsLogs).length} GPS logs displayed below`, 'success');
             } else {
                 showStatus('Tracking stopped', 'info');
             }
@@ -405,6 +464,7 @@
 
         startBtn.addEventListener('click', startTracking);
         stopBtn.addEventListener('click', stopTracking);
+        copyBtn.addEventListener('click', copyToClipboard);
     </script>
 </body>
 </html>

@@ -275,17 +275,63 @@
         }
 
         function exportJSON() {
-            const dataStr = JSON.stringify(gpsLogs, null, 2);
+            const logsToExport = savedGpsLogs || gpsLogs;
+            const dataStr = JSON.stringify(logsToExport, null, 2);
             const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const fileName = `gps-log-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+            
+            // Try Web Share API first (works better on mobile)
+            if (navigator.share && navigator.canShare) {
+                const file = new File([dataBlob], fileName, { type: 'application/json' });
+                
+                if (navigator.canShare({ files: [file] })) {
+                    navigator.share({
+                        files: [file],
+                        title: 'GPS Log',
+                        text: 'GPS tracking log'
+                    })
+                    .then(() => {
+                        showStatus('GPS log shared successfully!', 'success');
+                        setTimeout(hideStatus, 2000);
+                        downloadBtn.classList.add('hidden');
+                        savedGpsLogs = null;
+                    })
+                    .catch((error) => {
+                        if (error.name !== 'AbortError') {
+                            console.error('Share failed:', error);
+                            // Fallback to traditional download
+                            traditionalDownload(dataBlob, fileName);
+                        }
+                    });
+                    return;
+                }
+            }
+            
+            // Fallback to traditional download
+            traditionalDownload(dataBlob, fileName);
+        }
+        
+        function traditionalDownload(dataBlob, fileName) {
             const url = URL.createObjectURL(dataBlob);
             
             const link = document.createElement('a');
             link.href = url;
-            link.download = `gps-log-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+            link.download = fileName;
+            link.style.display = 'none';
             document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            
+            // Trigger click with a slight delay
+            setTimeout(() => {
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                
+                showStatus('GPS log download initiated!', 'success');
+                setTimeout(hideStatus, 2000);
+                
+                downloadBtn.classList.add('hidden');
+                savedGpsLogs = null;
+            }, 100);
         }
 
         function startTracking() {
@@ -396,6 +442,7 @@
 
         startBtn.addEventListener('click', startTracking);
         stopBtn.addEventListener('click', stopTracking);
+        downloadBtn.addEventListener('click', exportJSON);
     </script>
 </body>
 </html>

@@ -118,6 +118,22 @@
             transform: translateY(0);
         }
 
+        .download-btn {
+            background: #10b981;
+            color: white;
+            margin-top: 10px;
+        }
+
+        .download-btn:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(16, 185, 129, 0.4);
+        }
+
+        .download-btn:active {
+            transform: translateY(0);
+        }
+
         .hidden {
             display: none;
         }
@@ -175,6 +191,7 @@
         
         <button class="button start-btn" id="startBtn">Start Tracking</button>
         <button class="button stop-btn hidden" id="stopBtn">Stop Tracking</button>
+        <button class="button download-btn hidden" id="downloadBtn">Download GPS Log</button>
     </div>
 
     <script>
@@ -183,9 +200,11 @@
         let gpsInterval = null;
         let isTracking = false;
         let gpsLogs = {};
+        let savedGpsLogs = null;
 
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
         const timer = document.getElementById('timer');
         const startTimeDisplay = document.getElementById('startTime');
         const latitudeDisplay = document.getElementById('latitude');
@@ -350,15 +369,16 @@
             
             isTracking = false;
             
-            // Export JSON file before resetting
+            // Save GPS logs for manual download
             if (Object.keys(gpsLogs).length > 0) {
-                exportJSON();
-                showStatus(`Tracking stopped. Exported ${Object.keys(gpsLogs).length} GPS logs`, 'success');
+                savedGpsLogs = { ...gpsLogs };
+                showStatus(`Tracking stopped. ${Object.keys(gpsLogs).length} GPS logs ready to download`, 'success');
+                downloadBtn.classList.remove('hidden');
             } else {
                 showStatus('Tracking stopped', 'info');
             }
             
-            // Reset everything
+            // Reset everything except saved logs
             sessionStartTime = null;
             gpsLogs = {};
             timer.textContent = '00:00:00';

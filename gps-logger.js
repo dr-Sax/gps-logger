@@ -15,6 +15,18 @@ const status = document.getElementById('status');
 const gpsDisplay = document.getElementById('gpsDisplay');
 const lat = document.getElementById('lat');
 const lon = document.getElementById('lon');
+const annotationBox = document.getElementById('annotationBox');
+const annotationInput = document.getElementById('annotationInput');
+const annotateBtn = document.getElementById('annotateBtn');
+const liveOutput = document.getElementById('liveOutput');
+const liveJsonText = document.getElementById('liveJsonText');
+
+// Function to update the live JSON display
+function updateLiveDisplay() {
+    liveJsonText.value = JSON.stringify(gpsData, null, 2);
+    // Auto-scroll to bottom
+    liveJsonText.scrollTop = liveJsonText.scrollHeight;
+}
 
 // Function to update the timer display
 function updateTimer() {
@@ -38,14 +50,48 @@ function logGPS() {
             const time = new Date().toISOString();
             const latitude = position.coords.latitude.toFixed(6);
             const longitude = position.coords.longitude.toFixed(6);
-            gpsData[time] = `${latitude}, ${longitude}`;
+            gpsData[time] = [`${latitude}, ${longitude}`];
             
             // Update live display
             lat.textContent = latitude;
             lon.textContent = longitude;
+            updateLiveDisplay();
         },
         (error) => {
             console.error('GPS error:', error);
+        }
+    );
+}
+
+// Function to add text annotation
+function addAnnotation() {
+    const text = annotationInput.value.trim();
+    if (!text) {
+        alert('Please enter some text');
+        return;
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const time = new Date().toISOString();
+            const latitude = position.coords.latitude.toFixed(6);
+            const longitude = position.coords.longitude.toFixed(6);
+            gpsData[time] = [`${latitude}, ${longitude}`, text];
+            
+            // Update live display
+            updateLiveDisplay();
+            
+            // Clear input
+            annotationInput.value = '';
+        },
+        (error) => {
+            // If GPS fails, still add annotation with last known position
+            const time = new Date().toISOString();
+            const lastLat = lat.textContent;
+            const lastLon = lon.textContent;
+            gpsData[time] = [`${lastLat}, ${lastLon}`, text];
+            updateLiveDisplay();
+            annotationInput.value = '';
         }
     );
 }
@@ -63,12 +109,17 @@ function start() {
             const time = startTime.toISOString();
             const latitude = position.coords.latitude.toFixed(6);
             const longitude = position.coords.longitude.toFixed(6);
-            gpsData[time] = `${latitude}, ${longitude}`;
+            gpsData[time] = [`${latitude}, ${longitude}`];
             
             // Show and update live GPS display
             gpsDisplay.classList.remove('hidden');
             lat.textContent = latitude;
             lon.textContent = longitude;
+            
+            // Show annotation box and live output
+            annotationBox.classList.remove('hidden');
+            liveOutput.classList.remove('hidden');
+            updateLiveDisplay();
             
             // Start timer (updates every second)
             timerInterval = setInterval(updateTimer, 1000);
@@ -93,8 +144,10 @@ function stop() {
     clearInterval(timerInterval);
     clearInterval(gpsInterval);
     
-    // Hide GPS display
+    // Hide GPS display, annotation box, and live output
     gpsDisplay.classList.add('hidden');
+    annotationBox.classList.add('hidden');
+    liveOutput.classList.add('hidden');
     
     // Show JSON output
     jsonText.value = JSON.stringify(gpsData, null, 2);
@@ -123,3 +176,11 @@ function copy() {
 startBtn.addEventListener('click', start);
 stopBtn.addEventListener('click', stop);
 copyBtn.addEventListener('click', copy);
+annotateBtn.addEventListener('click', addAnnotation);
+
+// Allow Enter key to add annotation
+annotationInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        addAnnotation();
+    }
+});

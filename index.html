@@ -20,6 +20,16 @@
         <button class="start-btn" id="startBtn">Start</button>
         <button class="stop-btn hidden" id="stopBtn">Stop</button>
         
+        <div id="annotationBox" class="hidden">
+            <input type="text" id="annotationInput" placeholder="Add annotation...">
+            <button class="annotate-btn" id="annotateBtn">Add Note</button>
+        </div>
+        
+        <div id="liveOutput" class="hidden">
+            <h3>Live Data:</h3>
+            <textarea id="liveJsonText" readonly></textarea>
+        </div>
+        
         <div id="output" class="hidden">
             <textarea id="jsonText" readonly></textarea>
             <button class="copy-btn" id="copyBtn">Copy JSON</button>

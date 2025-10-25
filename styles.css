@@ -1,4 +1,4 @@
-        body {
+body {
             font-family: Arial, sans-serif;
             max-width: 500px;
             margin: 50px auto;
@@ -47,6 +47,51 @@
         .copy-btn {
             background: #10b981;
             color: white;
+        }
+
+        .annotate-btn {
+            background: #f59e0b;
+            color: white;
+        }
+
+        #annotationBox {
+            margin: 20px 0;
+        }
+
+        #annotationInput {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+
+        #annotationInput:focus {
+            outline: none;
+            border-color: #f59e0b;
+        }
+
+        #liveOutput {
+            margin: 20px 0;
+        }
+
+        #liveOutput h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        #liveJsonText {
+            width: 100%;
+            height: 300px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            background: #f9fafb;
+            box-sizing: border-box;
         }
 
         .hidden {

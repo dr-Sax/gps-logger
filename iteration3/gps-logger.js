@@ -13,14 +13,9 @@ let isSpeaking = false;
 let silenceTimeout = null;
 let isRecordingAudio = false;
 
-// Pre-buffer variables
-let preBufferRecorder = null;
-let preBuffer = [];
-const PRE_BUFFER_DURATION = 800; // Keep last 800ms of audio
-
 // Configurable thresholds
-const VOLUME_THRESHOLD = 30;
-const SILENCE_DELAY = 1500;
+const VOLUME_THRESHOLD = 30; // Adjust this (0-100) - lower = more sensitive
+const SILENCE_DELAY = 1500; // Stop recording after 1.5 seconds of silence
 
 // HTML elements
 const startBtn = document.getElementById('startBtn');
@@ -138,46 +133,9 @@ function monitorVoiceActivity() {
     }
 }
 
-// Start pre-buffer recorder (always recording to buffer)
-function startPreBuffer() {
-    const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
-        ? { mimeType: 'audio/webm;codecs=opus' }
-        : { mimeType: 'audio/webm' };
-    
-    preBufferRecorder = new MediaRecorder(audioStream, options);
-    
-    preBufferRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-            preBuffer.push({
-                data: event.data,
-                timestamp: Date.now()
-            });
-            
-            // Remove old chunks beyond buffer duration
-            const cutoffTime = Date.now() - PRE_BUFFER_DURATION;
-            preBuffer = preBuffer.filter(chunk => chunk.timestamp > cutoffTime);
-        }
-    };
-    
-    // Request data every 100ms to keep buffer fresh
-    preBufferRecorder.start(100);
-}
-
-// Stop pre-buffer recorder
-function stopPreBuffer() {
-    if (preBufferRecorder && preBufferRecorder.state !== 'inactive') {
-        preBufferRecorder.stop();
-    }
-}
-
-// Start recording audio chunk (with pre-buffered audio)
+// Start recording audio chunk
 function startRecording() {
     if (isRecordingAudio) return;
-    
-    // Add pre-buffered chunks to main recording
-    preBuffer.forEach(chunk => {
-        audioChunks.push(chunk.data);
-    });
     
     const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
         ? { mimeType: 'audio/webm;codecs=opus' }
@@ -252,9 +210,6 @@ async function setupAudioMonitoring() {
     voiceIndicator.textContent = '🔇 Listening for voice...';
     voiceIndicator.style.background = '#e0e7ff';
     
-    // Start pre-buffering
-    startPreBuffer();
-    
     monitorVoiceActivity();
 }
 
@@ -262,8 +217,6 @@ async function setupAudioMonitoring() {
 async function stopAudioMonitoring() {
     if (silenceTimeout) clearTimeout(silenceTimeout);
     if (isRecordingAudio) stopRecording();
-    
-    stopPreBuffer();
     
     if (audioStream) {
         audioStream.getTracks().forEach(track => track.stop());
@@ -314,7 +267,6 @@ async function start() {
         gpsData = {};
         recordedAudioBlob = null;
         audioChunks = [];
-        preBuffer = [];
         
         const time = startTime.toISOString();
         const latitude = position.coords.latitude.toFixed(6);

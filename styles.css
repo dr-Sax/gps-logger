@@ -164,14 +164,15 @@ textarea {
 }
 
 .recording-actions {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 5px;
+    margin-bottom: 5px;
 }
 
 .recording-actions button {
-    flex: 1;
-    padding: 8px;
-    font-size: 14px;
+    padding: 10px 8px;
+    font-size: 13px;
     margin: 0;
 }
 
@@ -185,7 +186,32 @@ textarea {
     color: white;
 }
 
+.share-btn {
+    background: #3b82f6;
+    color: white;
+}
+
 .delete-btn {
     background: #ef4444;
     color: white;
+    grid-column: span 2;
+}
+
+/* Action status messages */
+.action-status {
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: 5px;
+    font-size: 12px;
+    text-align: center;
+}
+
+.action-status.success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.action-status.error {
+    background: #fee2e2;
+    color: #dc2626;
 }

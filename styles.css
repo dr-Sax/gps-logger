@@ -17,6 +17,13 @@ h1 {
     color: #333;
 }
 
+h2 {
+    color: #333;
+    margin-top: 30px;
+    border-top: 2px solid #e5e5e5;
+    padding-top: 20px;
+}
+
 .timer {
     font-size: 48px;
     text-align: center;
@@ -137,4 +144,48 @@ textarea {
 .success {
     background: #d1fae5;
     color: #065f46;
+}
+
+/* Recordings List Styles */
+#recordingsList {
+    margin-top: 15px;
+}
+
+.recording-item {
+    background: #f9fafb;
+    border: 1px solid #e5e5e5;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.recording-info {
+    margin-bottom: 10px;
+}
+
+.recording-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.recording-actions button {
+    flex: 1;
+    padding: 8px;
+    font-size: 14px;
+    margin: 0;
+}
+
+.play-btn {
+    background: #667eea;
+    color: white;
+}
+
+.download-btn {
+    background: #10b981;
+    color: white;
+}
+
+.delete-btn {
+    background: #ef4444;
+    color: white;
 }

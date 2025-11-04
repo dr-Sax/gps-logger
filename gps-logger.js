@@ -6,6 +6,147 @@ let gpsData = {};
 let mediaRecorder = null;
 let audioChunks = [];
 let audioStream = null;
+let db = null;
+
+// Initialize IndexedDB
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('GPSTrackerDB', 1);
+        
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+            db = request.result;
+            resolve(db);
+        };
+        
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains('recordings')) {
+                db.createObjectStore('recordings', { keyPath: 'id', autoIncrement: true });
+            }
+        };
+    });
+}
+
+// Save recording to IndexedDB
+function saveRecording(audioBlob, gpsData, startTime) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['recordings'], 'readwrite');
+        const objectStore = transaction.objectStore('recordings');
+        
+        const recording = {
+            timestamp: startTime.toISOString(),
+            audio: audioBlob,
+            gpsData: gpsData,
+            duration: Math.floor((new Date() - startTime) / 1000)
+        };
+        
+        const request = objectStore.add(recording);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+// Load all recordings
+function loadRecordings() {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['recordings'], 'readonly');
+        const objectStore = transaction.objectStore('recordings');
+        const request = objectStore.getAll();
+        
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+// Delete a recording
+function deleteRecording(id) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['recordings'], 'readwrite');
+        const objectStore = transaction.objectStore('recordings');
+        const request = objectStore.delete(id);
+        
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+    });
+}
+
+// Display recordings list
+async function displayRecordings() {
+    const recordings = await loadRecordings();
+    const recordingsList = document.getElementById('recordingsList');
+    const recordingsSection = document.getElementById('recordingsSection');
+    
+    if (recordings.length === 0) {
+        recordingsSection.classList.add('hidden');
+        return;
+    }
+    
+    recordingsSection.classList.remove('hidden');
+    recordingsList.innerHTML = '';
+    
+    recordings.reverse().forEach((recording) => {
+        const div = document.createElement('div');
+        div.className = 'recording-item';
+        
+        const date = new Date(recording.timestamp);
+        const duration = Math.floor(recording.duration / 60) + 'm ' + (recording.duration % 60) + 's';
+        
+        div.innerHTML = `
+            <div class="recording-info">
+                <strong>${date.toLocaleString()}</strong>
+                <div style="font-size: 12px; color: #666;">Duration: ${duration}</div>
+            </div>
+            <div class="recording-actions">
+                <button onclick="playRecording(${recording.id})" class="play-btn">▶️ Play</button>
+                <button onclick="downloadRecording(${recording.id})" class="download-btn">⬇️ Download</button>
+                <button onclick="deleteRecordingById(${recording.id})" class="delete-btn">🗑️ Delete</button>
+            </div>
+        `;
+        
+        recordingsList.appendChild(div);
+    });
+}
+
+// Play recording
+window.playRecording = async function(id) {
+    const transaction = db.transaction(['recordings'], 'readonly');
+    const objectStore = transaction.objectStore('recordings');
+    const request = objectStore.get(id);
+    
+    request.onsuccess = () => {
+        const recording = request.result;
+        const audioUrl = URL.createObjectURL(recording.audio);
+        const audio = new Audio(audioUrl);
+        audio.play();
+        audio.onended = () => URL.revokeObjectURL(audioUrl);
+    };
+};
+
+// Download recording (user-triggered, so it works!)
+window.downloadRecording = async function(id) {
+    const transaction = db.transaction(['recordings'], 'readonly');
+    const objectStore = transaction.objectStore('recordings');
+    const request = objectStore.get(id);
+    
+    request.onsuccess = () => {
+        const recording = request.result;
+        const audioUrl = URL.createObjectURL(recording.audio);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = audioUrl;
+        downloadLink.download = `gps-audio-${recording.timestamp.replace(/[:.]/g, '-')}.webm`;
+        downloadLink.click();
+        URL.revokeObjectURL(audioUrl);
+    };
+};
+
+// Delete recording
+window.deleteRecordingById = async function(id) {
+    if (confirm('Delete this recording?')) {
+        await deleteRecording(id);
+        await displayRecordings();
+    }
+};
 
 // Get references to HTML elements
 const startBtn = document.getElementById('startBtn');
@@ -28,7 +169,6 @@ const recordingStatus = document.getElementById('recordingStatus');
 // Function to update the live JSON display
 function updateLiveDisplay() {
     liveJsonText.value = JSON.stringify(gpsData, null, 2);
-    // Auto-scroll to bottom
     liveJsonText.scrollTop = liveJsonText.scrollHeight;
 }
 
@@ -56,7 +196,6 @@ function logGPS() {
             const longitude = position.coords.longitude.toFixed(6);
             gpsData[time] = [`${latitude}, ${longitude}`];
             
-            // Update live display
             lat.textContent = latitude;
             lon.textContent = longitude;
             updateLiveDisplay();
@@ -81,15 +220,10 @@ function addAnnotation() {
             const latitude = position.coords.latitude.toFixed(6);
             const longitude = position.coords.longitude.toFixed(6);
             gpsData[time] = [`${latitude}, ${longitude}`, text];
-            
-            // Update live display
             updateLiveDisplay();
-            
-            // Clear input
             annotationInput.value = '';
         },
         (error) => {
-            // If GPS fails, still add annotation with last known position
             const time = new Date().toISOString();
             const lastLat = lat.textContent;
             const lastLon = lon.textContent;
@@ -103,21 +237,16 @@ function addAnnotation() {
 // Function to start audio recording
 async function startAudioRecording() {
     try {
-        // Request microphone access
         audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
-        // Create MediaRecorder
         mediaRecorder = new MediaRecorder(audioStream);
         audioChunks = [];
         
-        // Collect audio data
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 audioChunks.push(event.data);
             }
         };
         
-        // Start recording
         mediaRecorder.start();
         recordingStatus.textContent = '🔴 Recording Audio';
         recordingStatus.classList.remove('hidden');
@@ -129,7 +258,7 @@ async function startAudioRecording() {
     }
 }
 
-// Function to stop audio recording and save file
+// Function to stop audio recording and save to IndexedDB
 function stopAudioRecording() {
     return new Promise((resolve) => {
         if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -137,32 +266,26 @@ function stopAudioRecording() {
             return;
         }
         
-        mediaRecorder.onstop = () => {
-            // Create audio blob
+        mediaRecorder.onstop = async () => {
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             
-            // Create download link
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const downloadLink = document.createElement('a');
-            downloadLink.href = audioUrl;
+            try {
+                await saveRecording(audioBlob, gpsData, startTime);
+                status.textContent = '✅ Recording saved! Check "My Recordings" below.';
+                status.classList.remove('hidden');
+                setTimeout(() => status.classList.add('hidden'), 3000);
+                
+                await displayRecordings();
+            } catch (error) {
+                console.error('Error saving recording:', error);
+                alert('Error saving recording');
+            }
             
-            // Generate filename with timestamp
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            downloadLink.download = `gps-audio-${timestamp}.webm`;
-            
-            // Trigger download
-            document.body.appendChild(downloadLink);
-            downloadLink.click();
-            document.body.removeChild(downloadLink);
-            
-            // Clean up
-            URL.revokeObjectURL(audioUrl);
             if (audioStream) {
                 audioStream.getTracks().forEach(track => track.stop());
             }
             
             recordingStatus.classList.add('hidden');
-            console.log('Audio recording saved');
             resolve();
         };
         
@@ -172,39 +295,29 @@ function stopAudioRecording() {
 
 // Start tracking
 async function start() {
-    // Ask for GPS permission and get first position
     navigator.geolocation.getCurrentPosition(
         async (position) => {
-            // Reset everything
             startTime = new Date();
             gpsData = {};
             
-            // Log first GPS position
             const time = startTime.toISOString();
             const latitude = position.coords.latitude.toFixed(6);
             const longitude = position.coords.longitude.toFixed(6);
             gpsData[time] = [`${latitude}, ${longitude}`];
             
-            // Show and update live GPS display
             gpsDisplay.classList.remove('hidden');
             lat.textContent = latitude;
             lon.textContent = longitude;
             
-            // Show annotation box and live output
             annotationBox.classList.remove('hidden');
             liveOutput.classList.remove('hidden');
             updateLiveDisplay();
             
-            // Start audio recording
             await startAudioRecording();
             
-            // Start timer (updates every second)
             timerInterval = setInterval(updateTimer, 1000);
-            
-            // Log GPS every 30 seconds
             gpsInterval = setInterval(logGPS, 30000);
             
-            // Update buttons
             startBtn.classList.add('hidden');
             stopBtn.classList.remove('hidden');
             output.classList.add('hidden');
@@ -217,23 +330,18 @@ async function start() {
 
 // Stop tracking
 async function stop() {
-    // Stop audio recording first
     await stopAudioRecording();
     
-    // Stop intervals
     clearInterval(timerInterval);
     clearInterval(gpsInterval);
     
-    // Hide GPS display, annotation box, and live output
     gpsDisplay.classList.add('hidden');
     annotationBox.classList.add('hidden');
     liveOutput.classList.add('hidden');
     
-    // Show JSON output
     jsonText.value = JSON.stringify(gpsData, null, 2);
     output.classList.remove('hidden');
     
-    // Reset UI
     timer.textContent = '00:00:00';
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
@@ -252,13 +360,17 @@ function copy() {
         });
 }
 
+// Initialize app
+initDB().then(() => {
+    displayRecordings();
+});
+
 // Add click listeners
 startBtn.addEventListener('click', start);
 stopBtn.addEventListener('click', stop);
 copyBtn.addEventListener('click', copy);
 annotateBtn.addEventListener('click', addAnnotation);
 
-// Allow Enter key to add annotation
 annotationInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         addAnnotation();

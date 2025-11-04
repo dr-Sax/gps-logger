@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Tracker with Audio</title>
+    <title>GPS Tracker</title>
     <link rel="stylesheet" href="styles.css">
-    <!-- lamejs library for MP3 encoding -->
     <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js"></script>
 </head>
 <body>
@@ -16,7 +15,7 @@
         
         <div id="recordingStatus" class="recording-status hidden"></div>
         
-        <div id="gpsDisplay" class="hidden" style="text-align: center; margin: 20px 0; color: #666;">
+        <div id="gpsDisplay" class="hidden">
             <div><strong>Latitude:</strong> <span id="lat">--</span></div>
             <div><strong>Longitude:</strong> <span id="lon">--</span></div>
         </div>
@@ -38,13 +37,8 @@
             <h3>Session Complete!</h3>
             <textarea id="jsonText" readonly></textarea>
             
-            <div class="share-buttons">
-                <button class="share-audio-btn" id="shareAudioBtn">📤 Share Audio (MP3)</button>
-                <button class="share-json-btn" id="shareJsonBtn">📤 Share GPS Data (JSON)</button>
-                <button class="copy-btn" id="copyBtn">📋 Copy JSON</button>
-            </div>
-            
-            <div id="status" class="status success hidden"></div>
+            <input type="text" id="filenameInput" placeholder="Enter filename...">
+            <button class="share-btn" id="shareBtn">📤 Save Files</button>
         </div>
     </div>
 

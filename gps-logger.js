@@ -6,310 +6,12 @@ let gpsData = {};
 let mediaRecorder = null;
 let audioChunks = [];
 let audioStream = null;
-let db = null;
-
-// Initialize IndexedDB
-function initDB() {
-    return new Promise((resolve, reject) => {
-        const request = indexedDB.open('GPSTrackerDB', 1);
-        
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-            db = request.result;
-            resolve(db);
-        };
-        
-        request.onupgradeneeded = (event) => {
-            const db = event.target.result;
-            if (!db.objectStoreNames.contains('recordings')) {
-                db.createObjectStore('recordings', { keyPath: 'id', autoIncrement: true });
-            }
-        };
-    });
-}
-
-// Save recording to IndexedDB
-function saveRecording(audioBlob, gpsData, startTime) {
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(['recordings'], 'readwrite');
-        const objectStore = transaction.objectStore('recordings');
-        
-        const recording = {
-            timestamp: startTime.toISOString(),
-            audio: audioBlob,
-            gpsData: gpsData,
-            duration: Math.floor((new Date() - startTime) / 1000)
-        };
-        
-        const request = objectStore.add(recording);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-}
-
-// Load all recordings
-function loadRecordings() {
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(['recordings'], 'readonly');
-        const objectStore = transaction.objectStore('recordings');
-        const request = objectStore.getAll();
-        
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-    });
-}
-
-// Delete a recording
-function deleteRecording(id) {
-    return new Promise((resolve, reject) => {
-        const transaction = db.transaction(['recordings'], 'readwrite');
-        const objectStore = transaction.objectStore('recordings');
-        const request = objectStore.delete(id);
-        
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-    });
-}
-
-// Display recordings list
-async function displayRecordings() {
-    const recordings = await loadRecordings();
-    const recordingsList = document.getElementById('recordingsList');
-    const recordingsSection = document.getElementById('recordingsSection');
-    
-    if (recordings.length === 0) {
-        recordingsSection.classList.add('hidden');
-        return;
-    }
-    
-    recordingsSection.classList.remove('hidden');
-    recordingsList.innerHTML = '';
-    
-    recordings.reverse().forEach((recording) => {
-        const div = document.createElement('div');
-        div.className = 'recording-item';
-        
-        const date = new Date(recording.timestamp);
-        const duration = Math.floor(recording.duration / 60) + 'm ' + (recording.duration % 60) + 's';
-        
-        div.innerHTML = `
-            <div class="recording-info">
-                <strong>${date.toLocaleString()}</strong>
-                <div style="font-size: 12px; color: #666;">Duration: ${duration} | Size: ${(recording.audio.size / 1024 / 1024).toFixed(2)} MB</div>
-            </div>
-            <div class="recording-actions">
-                <button onclick="playRecording(${recording.id})" class="play-btn">▶️ Play</button>
-                <button onclick="downloadRecording(${recording.id}, '${recording.timestamp}')" class="download-btn">⬇️ Save</button>
-                <button onclick="shareRecording(${recording.id})" class="share-btn">📤 Share</button>
-                <button onclick="deleteRecordingById(${recording.id})" class="delete-btn">🗑️</button>
-            </div>
-            <div id="status-${recording.id}" class="action-status hidden"></div>
-        `;
-        
-        recordingsList.appendChild(div);
-    });
-}
-
-// Show status message for a recording
-function showRecordingStatus(id, message, isError = false) {
-    const statusDiv = document.getElementById(`status-${id}`);
-    if (statusDiv) {
-        statusDiv.textContent = message;
-        statusDiv.className = 'action-status ' + (isError ? 'error' : 'success');
-        statusDiv.classList.remove('hidden');
-        setTimeout(() => {
-            statusDiv.classList.add('hidden');
-        }, 3000);
-    }
-}
-
-// Play recording with better mobile support
-window.playRecording = async function(id) {
-    try {
-        const transaction = db.transaction(['recordings'], 'readonly');
-        const objectStore = transaction.objectStore('recordings');
-        const request = objectStore.get(id);
-        
-        request.onsuccess = () => {
-            try {
-                const recording = request.result;
-                
-                // Create audio element
-                const audioUrl = URL.createObjectURL(recording.audio);
-                const audio = new Audio();
-                
-                // Set up event handlers
-                audio.onloadeddata = () => {
-                    console.log('Audio loaded successfully');
-                    showRecordingStatus(id, '▶️ Playing...');
-                };
-                
-                audio.onerror = (e) => {
-                    console.error('Audio playback error:', e);
-                    showRecordingStatus(id, '❌ Playback failed. Try downloading instead.', true);
-                    URL.revokeObjectURL(audioUrl);
-                };
-                
-                audio.onended = () => {
-                    URL.revokeObjectURL(audioUrl);
-                    showRecordingStatus(id, '✅ Finished playing');
-                };
-                
-                // Set source and play
-                audio.src = audioUrl;
-                audio.play().catch(err => {
-                    console.error('Play error:', err);
-                    showRecordingStatus(id, '❌ Cannot play. Try downloading.', true);
-                });
-                
-            } catch (error) {
-                console.error('Error creating audio:', error);
-                showRecordingStatus(id, '❌ Error: ' + error.message, true);
-            }
-        };
-        
-        request.onerror = () => {
-            console.error('Error retrieving recording:', request.error);
-            showRecordingStatus(id, '❌ Could not load recording', true);
-        };
-        
-    } catch (error) {
-        console.error('Play recording error:', error);
-        showRecordingStatus(id, '❌ Error: ' + error.message, true);
-    }
-};
-
-// Download recording with better mobile support
-window.downloadRecording = async function(id, timestamp) {
-    try {
-        const transaction = db.transaction(['recordings'], 'readonly');
-        const objectStore = transaction.objectStore('recordings');
-        const request = objectStore.get(id);
-        
-        request.onsuccess = () => {
-            try {
-                const recording = request.result;
-                const audioUrl = URL.createObjectURL(recording.audio);
-                
-                // Create a temporary link
-                const downloadLink = document.createElement('a');
-                downloadLink.style.display = 'none';
-                downloadLink.href = audioUrl;
-                downloadLink.download = `gps-audio-${timestamp.replace(/[:.]/g, '-').substring(0, 19)}.webm`;
-                
-                // For iOS Safari: try opening in new window if download fails
-                if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-                    // iOS Safari workaround
-                    downloadLink.target = '_blank';
-                    downloadLink.rel = 'noopener noreferrer';
-                }
-                
-                document.body.appendChild(downloadLink);
-                
-                // Try to trigger download
-                downloadLink.click();
-                
-                // Cleanup
-                setTimeout(() => {
-                    document.body.removeChild(downloadLink);
-                    URL.revokeObjectURL(audioUrl);
-                }, 100);
-                
-                showRecordingStatus(id, '💾 Download started...');
-                
-                // For iOS, show additional instruction
-                if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-                    setTimeout(() => {
-                        showRecordingStatus(id, '📱 File opened in new tab. Long-press to save.', false);
-                    }, 500);
-                }
-                
-            } catch (error) {
-                console.error('Download error:', error);
-                showRecordingStatus(id, '❌ Download failed: ' + error.message, true);
-            }
-        };
-        
-        request.onerror = () => {
-            console.error('Error retrieving recording:', request.error);
-            showRecordingStatus(id, '❌ Could not load recording', true);
-        };
-        
-    } catch (error) {
-        console.error('Download recording error:', error);
-        showRecordingStatus(id, '❌ Error: ' + error.message, true);
-    }
-};
-
-// Share recording using Web Share API (mobile-friendly)
-window.shareRecording = async function(id) {
-    try {
-        // Check if Web Share API is supported
-        if (!navigator.share) {
-            showRecordingStatus(id, '❌ Sharing not supported on this device', true);
-            return;
-        }
-        
-        const transaction = db.transaction(['recordings'], 'readonly');
-        const objectStore = transaction.objectStore('recordings');
-        const request = objectStore.get(id);
-        
-        request.onsuccess = async () => {
-            try {
-                const recording = request.result;
-                
-                // Create a File from the blob
-                const file = new File(
-                    [recording.audio], 
-                    `gps-audio-${recording.timestamp.replace(/[:.]/g, '-').substring(0, 19)}.webm`,
-                    { type: recording.audio.type }
-                );
-                
-                // Try to share
-                await navigator.share({
-                    files: [file],
-                    title: 'GPS Audio Recording',
-                    text: `Recording from ${new Date(recording.timestamp).toLocaleString()}`
-                });
-                
-                showRecordingStatus(id, '✅ Shared successfully');
-                
-            } catch (error) {
-                if (error.name === 'AbortError') {
-                    showRecordingStatus(id, 'Share cancelled');
-                } else {
-                    console.error('Share error:', error);
-                    showRecordingStatus(id, '❌ Share failed. Try download instead.', true);
-                }
-            }
-        };
-        
-        request.onerror = () => {
-            console.error('Error retrieving recording:', request.error);
-            showRecordingStatus(id, '❌ Could not load recording', true);
-        };
-        
-    } catch (error) {
-        console.error('Share recording error:', error);
-        showRecordingStatus(id, '❌ Error: ' + error.message, true);
-    }
-};
-
-// Delete recording
-window.deleteRecordingById = async function(id) {
-    if (confirm('Delete this recording?')) {
-        try {
-            await deleteRecording(id);
-            await displayRecordings();
-        } catch (error) {
-            alert('Error deleting recording: ' + error.message);
-        }
-    }
-};
 
 // Get references to HTML elements
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
+const shareAudioBtn = document.getElementById('shareAudioBtn');
+const shareJsonBtn = document.getElementById('shareJsonBtn');
 const copyBtn = document.getElementById('copyBtn');
 const timer = document.getElementById('timer');
 const output = document.getElementById('output');
@@ -324,6 +26,9 @@ const annotateBtn = document.getElementById('annotateBtn');
 const liveOutput = document.getElementById('liveOutput');
 const liveJsonText = document.getElementById('liveJsonText');
 const recordingStatus = document.getElementById('recordingStatus');
+
+let recordedAudioBlob = null;
+let recordingTimestamp = null;
 
 // Function to update the live JSON display
 function updateLiveDisplay() {
@@ -393,24 +98,75 @@ function addAnnotation() {
     );
 }
 
+// Function to convert WebM to MP3 (client-side using lamejs)
+async function convertToMP3(webmBlob) {
+    return new Promise((resolve, reject) => {
+        // Create audio context to decode the audio
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const fileReader = new FileReader();
+        
+        fileReader.onload = async function(e) {
+            try {
+                const audioBuffer = await audioContext.decodeAudioData(e.target.result);
+                
+                // Get audio data
+                const channels = audioBuffer.numberOfChannels;
+                const sampleRate = audioBuffer.sampleRate;
+                const samples = audioBuffer.getChannelData(0); // Get mono or first channel
+                
+                // Convert float samples to 16-bit PCM
+                const buffer = new Int16Array(samples.length);
+                for (let i = 0; i < samples.length; i++) {
+                    const s = Math.max(-1, Math.min(1, samples[i]));
+                    buffer[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                
+                // Encode to MP3 using lamejs
+                const mp3encoder = new lamejs.Mp3Encoder(1, sampleRate, 128);
+                const mp3Data = [];
+                
+                const sampleBlockSize = 1152;
+                for (let i = 0; i < buffer.length; i += sampleBlockSize) {
+                    const sampleChunk = buffer.subarray(i, i + sampleBlockSize);
+                    const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+                    if (mp3buf.length > 0) {
+                        mp3Data.push(mp3buf);
+                    }
+                }
+                
+                // Finish encoding
+                const mp3buf = mp3encoder.flush();
+                if (mp3buf.length > 0) {
+                    mp3Data.push(mp3buf);
+                }
+                
+                // Create blob
+                const mp3Blob = new Blob(mp3Data, { type: 'audio/mp3' });
+                resolve(mp3Blob);
+                
+            } catch (error) {
+                console.error('Error converting to MP3:', error);
+                reject(error);
+            }
+        };
+        
+        fileReader.onerror = reject;
+        fileReader.readAsArrayBuffer(webmBlob);
+    });
+}
+
 // Function to start audio recording
 async function startAudioRecording() {
     try {
         audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         
-        // Try to use specific codec for better mobile compatibility
+        // Use best available format
         let options = { mimeType: 'audio/webm' };
-        
-        // Check for supported MIME types
         if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
             options.mimeType = 'audio/webm;codecs=opus';
-        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-            options.mimeType = 'audio/mp4';
-        } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
-            options.mimeType = 'audio/ogg;codecs=opus';
         }
         
-        console.log('Using MIME type:', options.mimeType);
+        console.log('Recording with MIME type:', options.mimeType);
         
         mediaRecorder = new MediaRecorder(audioStream, options);
         audioChunks = [];
@@ -418,7 +174,6 @@ async function startAudioRecording() {
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 audioChunks.push(event.data);
-                console.log('Audio chunk received:', event.data.size, 'bytes');
             }
         };
         
@@ -433,8 +188,8 @@ async function startAudioRecording() {
     }
 }
 
-// Function to stop audio recording and save to IndexedDB
-function stopAudioRecording() {
+// Function to stop audio recording
+async function stopAudioRecording() {
     return new Promise((resolve) => {
         if (!mediaRecorder || mediaRecorder.state === 'inactive') {
             resolve();
@@ -442,33 +197,101 @@ function stopAudioRecording() {
         }
         
         mediaRecorder.onstop = async () => {
-            console.log('Recording stopped. Total chunks:', audioChunks.length);
+            const webmBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+            console.log('WebM recording complete. Size:', webmBlob.size, 'bytes');
             
-            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
-            console.log('Audio blob created. Size:', audioBlob.size, 'bytes, Type:', audioBlob.type);
+            // Show converting message
+            recordingStatus.textContent = '⏳ Converting to MP3...';
             
             try {
-                await saveRecording(audioBlob, gpsData, startTime);
-                status.textContent = '✅ Recording saved! Check "My Recordings" below.';
-                status.classList.remove('hidden');
-                setTimeout(() => status.classList.add('hidden'), 3000);
+                // Convert to MP3
+                recordedAudioBlob = await convertToMP3(webmBlob);
+                recordingTimestamp = new Date().toISOString();
+                console.log('MP3 conversion complete. Size:', recordedAudioBlob.size, 'bytes');
                 
-                await displayRecordings();
+                recordingStatus.classList.add('hidden');
             } catch (error) {
-                console.error('Error saving recording:', error);
-                alert('Error saving recording: ' + error.message);
+                console.error('MP3 conversion failed, using original format:', error);
+                // Fallback to WebM if conversion fails
+                recordedAudioBlob = webmBlob;
+                recordingTimestamp = new Date().toISOString();
+                recordingStatus.classList.add('hidden');
             }
             
             if (audioStream) {
                 audioStream.getTracks().forEach(track => track.stop());
             }
             
-            recordingStatus.classList.add('hidden');
             resolve();
         };
         
         mediaRecorder.stop();
     });
+}
+
+// Share audio file
+async function shareAudio() {
+    if (!recordedAudioBlob) {
+        alert('No recording available to share');
+        return;
+    }
+    
+    try {
+        if (!navigator.share) {
+            alert('Sharing not supported on this device');
+            return;
+        }
+        
+        const filename = `gps-audio-${recordingTimestamp.replace(/[:.]/g, '-').substring(0, 19)}.mp3`;
+        const file = new File([recordedAudioBlob], filename, { type: 'audio/mp3' });
+        
+        await navigator.share({
+            files: [file],
+            title: 'GPS Audio Recording',
+            text: `Recording from ${new Date(recordingTimestamp).toLocaleString()}`
+        });
+        
+        status.textContent = '✅ Audio shared successfully!';
+        status.classList.remove('hidden');
+        setTimeout(() => status.classList.add('hidden'), 2000);
+        
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Share error:', error);
+            alert('Could not share audio: ' + error.message);
+        }
+    }
+}
+
+// Share JSON file
+async function shareJSON() {
+    try {
+        if (!navigator.share) {
+            alert('Sharing not supported on this device');
+            return;
+        }
+        
+        const jsonString = JSON.stringify(gpsData, null, 2);
+        const jsonBlob = new Blob([jsonString], { type: 'application/json' });
+        const filename = `gps-data-${new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)}.json`;
+        const file = new File([jsonBlob], filename, { type: 'application/json' });
+        
+        await navigator.share({
+            files: [file],
+            title: 'GPS Data',
+            text: 'GPS tracking data'
+        });
+        
+        status.textContent = '✅ GPS data shared successfully!';
+        status.classList.remove('hidden');
+        setTimeout(() => status.classList.add('hidden'), 2000);
+        
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            console.error('Share error:', error);
+            alert('Could not share GPS data: ' + error.message);
+        }
+    }
 }
 
 // Start tracking
@@ -477,6 +300,7 @@ async function start() {
         async (position) => {
             startTime = new Date();
             gpsData = {};
+            recordedAudioBlob = null;
             
             const time = startTime.toISOString();
             const latitude = position.coords.latitude.toFixed(6);
@@ -538,15 +362,11 @@ function copy() {
         });
 }
 
-// Initialize app
-initDB().then(() => {
-    displayRecordings();
-    console.log('App initialized. User agent:', navigator.userAgent);
-});
-
 // Add click listeners
 startBtn.addEventListener('click', start);
 stopBtn.addEventListener('click', stop);
+shareAudioBtn.addEventListener('click', shareAudio);
+shareJsonBtn.addEventListener('click', shareJSON);
 copyBtn.addEventListener('click', copy);
 annotateBtn.addEventListener('click', addAnnotation);
 

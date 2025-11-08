@@ -3,18 +3,20 @@ let startTime = null;
 let timerInterval = null;
 let gpsInterval = null;
 let gpsData = {};
-let audioSegments = [];
-let currentSegment = null;
+let mediaRecorder = null;
+let audioChunks = [];
 let audioStream = null;
+let recordedAudioBlob = null;
 let audioContext = null;
 let analyser = null;
 let isSpeaking = false;
 let silenceTimeout = null;
+let isRecordingAudio = false;
 
 // Pre-buffer variables
 let preBufferRecorder = null;
 let preBuffer = [];
-const PRE_BUFFER_DURATION = 800;
+const PRE_BUFFER_DURATION = 800; // Keep last 800ms of audio
 
 // Configurable thresholds
 const VOLUME_THRESHOLD = 30;
@@ -41,15 +43,7 @@ const voiceIndicator = document.getElementById('voiceIndicator');
 
 // Update live JSON display
 function updateLiveDisplay() {
-    const displayData = {
-        gps: gpsData,
-        audio_segments: audioSegments.map(seg => ({
-            file: seg.filename,
-            start: seg.startTime,
-            end: seg.endTime || 'recording...'
-        }))
-    };
-    liveJsonText.value = JSON.stringify(displayData, null, 2);
+    liveJsonText.value = JSON.stringify(gpsData, null, 2);
     liveJsonText.scrollTop = liveJsonText.scrollHeight;
 }
 
@@ -102,17 +96,6 @@ function addAnnotation() {
     );
 }
 
-// Format timestamp for filename
-function formatTimestamp(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-}
-
 // Get audio volume level
 function getVolume() {
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
@@ -126,6 +109,7 @@ function monitorVoiceActivity() {
     const volume = getVolume();
     
     if (volume > VOLUME_THRESHOLD) {
+        // Voice detected
         if (!isSpeaking) {
             isSpeaking = true;
             voiceIndicator.textContent = '🎤 Voice Detected - Recording...';
@@ -133,11 +117,13 @@ function monitorVoiceActivity() {
             startRecording();
         }
         
+        // Clear silence timeout
         if (silenceTimeout) {
             clearTimeout(silenceTimeout);
             silenceTimeout = null;
         }
         
+        // Set new silence timeout
         silenceTimeout = setTimeout(() => {
             isSpeaking = false;
             voiceIndicator.textContent = '🔇 Listening for voice...';
@@ -146,12 +132,13 @@ function monitorVoiceActivity() {
         }, SILENCE_DELAY);
     }
     
+    // Continue monitoring
     if (audioStream) {
         requestAnimationFrame(monitorVoiceActivity);
     }
 }
 
-// Start pre-buffer recorder
+// Start pre-buffer recorder (always recording to buffer)
 function startPreBuffer() {
     const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
         ? { mimeType: 'audio/webm;codecs=opus' }
@@ -166,11 +153,13 @@ function startPreBuffer() {
                 timestamp: Date.now()
             });
             
+            // Remove old chunks beyond buffer duration
             const cutoffTime = Date.now() - PRE_BUFFER_DURATION;
             preBuffer = preBuffer.filter(chunk => chunk.timestamp > cutoffTime);
         }
     };
     
+    // Request data every 100ms to keep buffer fresh
     preBufferRecorder.start(100);
 }
 
@@ -181,50 +170,35 @@ function stopPreBuffer() {
     }
 }
 
-// Start recording audio segment
+// Start recording audio chunk (with pre-buffered audio)
 function startRecording() {
-    if (currentSegment) return;
+    if (isRecordingAudio) return;
     
-    const startDate = new Date();
-    currentSegment = {
-        startTime: startDate.toISOString(),
-        startDate: startDate,
-        chunks: [...preBuffer.map(chunk => chunk.data)],
-        recorder: null
-    };
+    // Add pre-buffered chunks to main recording
+    preBuffer.forEach(chunk => {
+        audioChunks.push(chunk.data);
+    });
     
     const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') 
         ? { mimeType: 'audio/webm;codecs=opus' }
         : { mimeType: 'audio/webm' };
     
-    currentSegment.recorder = new MediaRecorder(audioStream, options);
+    mediaRecorder = new MediaRecorder(audioStream, options);
     
-    currentSegment.recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) currentSegment.chunks.push(event.data);
+    mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunks.push(event.data);
     };
     
-    currentSegment.recorder.start();
+    mediaRecorder.start();
+    isRecordingAudio = true;
 }
 
-// Stop recording audio segment
+// Stop recording audio chunk
 function stopRecording() {
-    if (!currentSegment || !currentSegment.recorder) return;
+    if (!isRecordingAudio || !mediaRecorder) return;
     
-    currentSegment.recorder.onstop = async () => {
-        const endDate = new Date();
-        currentSegment.endTime = endDate.toISOString();
-        currentSegment.endDate = endDate;
-        
-        const startFormatted = formatTimestamp(currentSegment.startDate);
-        const endTimeOnly = `${String(endDate.getHours()).padStart(2, '0')}-${String(endDate.getMinutes()).padStart(2, '0')}-${String(endDate.getSeconds()).padStart(2, '0')}`;
-        currentSegment.filename = `${startFormatted}_to_${endTimeOnly}.mp3`;
-        
-        audioSegments.push(currentSegment);
-        currentSegment = null;
-        updateLiveDisplay();
-    };
-    
-    currentSegment.recorder.stop();
+    mediaRecorder.stop();
+    isRecordingAudio = false;
 }
 
 // Convert to MP3
@@ -278,16 +252,16 @@ async function setupAudioMonitoring() {
     voiceIndicator.textContent = '🔇 Listening for voice...';
     voiceIndicator.style.background = '#e0e7ff';
     
+    // Start pre-buffering
     startPreBuffer();
+    
     monitorVoiceActivity();
 }
 
 // Stop audio monitoring
 async function stopAudioMonitoring() {
     if (silenceTimeout) clearTimeout(silenceTimeout);
-    if (currentSegment) stopRecording();
-    
-    await new Promise(resolve => setTimeout(resolve, 100));
+    if (isRecordingAudio) stopRecording();
     
     stopPreBuffer();
     
@@ -303,46 +277,33 @@ async function stopAudioMonitoring() {
     
     voiceIndicator.classList.add('hidden');
     
-    if (audioSegments.length > 0) {
-        recordingStatus.textContent = `⏳ Converting ${audioSegments.length} audio segments to MP3...`;
+    if (audioChunks.length > 0) {
+        recordingStatus.textContent = '⏳ Converting to MP3...';
         recordingStatus.classList.remove('hidden');
         
-        for (let segment of audioSegments) {
-            const webmBlob = new Blob(segment.chunks, { type: 'audio/webm' });
-            segment.mp3Blob = await convertToMP3(webmBlob);
-        }
+        const webmBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        recordedAudioBlob = await convertToMP3(webmBlob);
         
         recordingStatus.classList.add('hidden');
     }
 }
 
-// Share all files
+// Share both files
 async function shareFiles() {
-    const sessionName = filenameInput.value.trim() || 'gps-session';
+    const filename = filenameInput.value.trim() || 'gps-recording';
     
-    const finalData = {
-        gps: gpsData,
-        audio_segments: audioSegments.map(seg => ({
-            file: `${sessionName}_${seg.filename}`,
-            start: seg.startTime,
-            end: seg.endTime
-        }))
-    };
-    
-    const jsonString = JSON.stringify(finalData, null, 2);
+    const jsonString = JSON.stringify(gpsData, null, 2);
     const jsonBlob = new Blob([jsonString], { type: 'application/json' });
     
-    const files = [new File([jsonBlob], `${sessionName}_data.json`, { type: 'application/json' })];
+    const files = [new File([jsonBlob], `${filename}.json`, { type: 'application/json' })];
     
-    for (let segment of audioSegments) {
-        if (segment.mp3Blob && segment.mp3Blob.size > 0) {
-            files.push(new File([segment.mp3Blob], `${sessionName}_${segment.filename}`, { type: 'audio/mp3' }));
-        }
+    if (recordedAudioBlob && recordedAudioBlob.size > 0) {
+        files.push(new File([recordedAudioBlob], `${filename}.mp3`, { type: 'audio/mp3' }));
     }
     
     await navigator.share({
         files: files,
-        title: sessionName
+        title: filename
     });
 }
 
@@ -351,9 +312,9 @@ async function start() {
     navigator.geolocation.getCurrentPosition(async (position) => {
         startTime = new Date();
         gpsData = {};
-        audioSegments = [];
+        recordedAudioBlob = null;
+        audioChunks = [];
         preBuffer = [];
-        currentSegment = null;
         
         const time = startTime.toISOString();
         const latitude = position.coords.latitude.toFixed(6);
@@ -390,16 +351,7 @@ async function stop() {
     annotationBox.classList.add('hidden');
     liveOutput.classList.add('hidden');
     
-    const finalData = {
-        gps: gpsData,
-        audio_segments: audioSegments.map(seg => ({
-            file: seg.filename,
-            start: seg.startTime,
-            end: seg.endTime
-        }))
-    };
-    
-    jsonText.value = JSON.stringify(finalData, null, 2);
+    jsonText.value = JSON.stringify(gpsData, null, 2);
     output.classList.remove('hidden');
     
     timer.textContent = '00:00:00';
@@ -407,7 +359,7 @@ async function stop() {
     stopBtn.classList.add('hidden');
     
     const timestamp = new Date().toISOString().substring(0, 16).replace('T', '_').replace(/:/g, '-');
-    filenameInput.value = `session-${timestamp}`;
+    filenameInput.value = `gps-${timestamp}`;
 }
 
 // Event listeners

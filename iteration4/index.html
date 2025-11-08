@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.0/lame.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>GPS Tracker</h1>
+        
+        <div class="timer" id="timer">00:00:00</div>
+        
+        <div id="voiceIndicator" class="voice-indicator hidden"></div>
+        <div id="recordingStatus" class="recording-status hidden"></div>
+        
+        <div id="gpsDisplay" class="hidden">
+            <div><strong>Latitude:</strong> <span id="lat">--</span></div>
+            <div><strong>Longitude:</strong> <span id="lon">--</span></div>
+        </div>
+        
+        <button class="start-btn" id="startBtn">Start Tracking</button>
+        <button class="stop-btn hidden" id="stopBtn">Stop Tracking</button>
+        
+        <div id="annotationBox" class="hidden">
+            <input type="text" id="annotationInput" placeholder="Add annotation...">
+            <button class="annotate-btn" id="annotateBtn">Add Note</button>
+        </div>
+        
+        <div id="liveOutput" class="hidden">
+            <h3>Live GPS Data:</h3>
+            <textarea id="liveJsonText" readonly></textarea>
+        </div>
+        
+        <div id="output" class="hidden">
+            <h3>Session Complete!</h3>
+            <textarea id="jsonText" readonly></textarea>
+            
+            <input type="text" id="filenameInput" placeholder="Enter filename...">
+            <button class="share-btn" id="shareBtn">📤 Save Files</button>
+        </div>
+    </div>
+
+    <script src="gps-logger.js"></script>
+</body>
+</html>
